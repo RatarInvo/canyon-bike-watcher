@@ -9,7 +9,7 @@ from playwright.sync_api import sync_playwright
 
 PRODUCT_URL = os.getenv(
     "PRODUCT_URL",
-    "https://www.canyon.com/sv-se/landsvaegscyklar/triathlon-cykel/speedmax/cfr/speedmax-cfr-di2/4525.html",
+    "https://www.canyon.com/sv-se/landsvaegscyklar/triathlon-cykel/speedmax/cf-slx/speedmax-cf-slx-7-di2/4518.html",
 )
 
 DISCORD_WEBHOOK_URL = os.environ["DISCORD_WEBHOOK_URL"]
