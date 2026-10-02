@@ -4,7 +4,6 @@ import re
 from pathlib import Path
 
 import requests
-from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
 
@@ -17,40 +16,40 @@ DISCORD_WEBHOOK_URL = os.environ["DISCORD_WEBHOOK_URL"]
 
 STATE_FILE = Path(os.getenv("STATE_FILE", "state.json"))
 
-# Dessa texter betyder normalt att produkten inte kan köpas ännu.
+# Dessa texter betyder att produkten normalt inte går att köpa ännu.
 UNAVAILABLE_MARKERS = [
+    "kommer snart",
     "coming soon",
     "checka in igen",
     "check back",
     "registrera dig för att få ett meddelande",
+    "registrera dig för att få en avisering",
     "notify me",
 ]
 
-# Dessa texter indikerar att köpknapp eller varukorg kan vara tillgänglig.
+# Använd endast tydliga köpmarkörer här.
+# "välj ramstorlek" och "välj färg och storlek" är borttagna
+# eftersom de kan visas även när produkten inte går att köpa.
 AVAILABLE_MARKERS = [
-    "kommer snart",
     "lägg i varukorg",
     "lägg i kundvagn",
+    "lägg i korgen",
     "köp nu",
     "add to cart",
     "add to basket",
     "buy now",
-    "välj ramstorlek",
-    "välj färg och storlek",
 ]
 
 
 def normalize_text(text: str) -> str:
-    """
-    Gör texten lättare att jämföra:
-    - små bokstäver
-    - ersätter flera mellanslag med ett
-    """
+    """Gör texten lättare att jämföra."""
     text = text.lower()
     text = re.sub(r"\s+", " ", text)
     return text.strip()
 
+
 def load_state() -> dict:
+    """Läser tidigare status från state.json."""
     if not STATE_FILE.exists():
         return {
             "available": False,
@@ -59,9 +58,16 @@ def load_state() -> dict:
 
     try:
         with STATE_FILE.open("r", encoding="utf-8") as file:
-            return json.load(file)
+            state = json.load(file)
+
+        return {
+            "available": bool(state.get("available", False)),
+            "initialized": bool(state.get("initialized", False)),
+        }
+
     except json.JSONDecodeError:
         print("state.json kunde inte läsas. Börjar om från tom status.")
+
         return {
             "available": False,
             "initialized": False,
@@ -69,6 +75,9 @@ def load_state() -> dict:
 
 
 def save_state(state: dict) -> None:
+    """Skriver state atomiskt till state.json."""
+    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+
     temporary_file = STATE_FILE.with_suffix(".tmp")
 
     with temporary_file.open("w", encoding="utf-8") as file:
@@ -79,6 +88,7 @@ def save_state(state: dict) -> None:
 
 
 def send_discord_message(message: str) -> None:
+    """Skickar meddelande till Discord-webhooken."""
     response = requests.post(
         DISCORD_WEBHOOK_URL,
         json={
@@ -93,33 +103,74 @@ def send_discord_message(message: str) -> None:
     response.raise_for_status()
 
 
-def contains_any(text: str, markers: list[str]) -> bool:
-    return any(marker in text for marker in markers)
+def get_matching_markers(text: str, markers: list[str]) -> list[str]:
+    """Returnerar alla markörer som hittades i texten."""
+    return [
+        marker
+        for marker in markers
+        if marker in text
+    ]
 
 
 def get_visible_action_text(page) -> str:
     """
     Hämtar text från synliga knappar och länkar.
-    Detta minskar risken att en dold eller generell text
-    felaktigt tolkas som en köpknapp.
+    Endast dessa används som köpindikator.
     """
     texts = []
 
-    for selector in [
+    selectors = [
         "button:visible",
         "a:visible",
         "input[type='submit']:visible",
         "[role='button']:visible",
-    ]:
+    ]
+
+    for selector in selectors:
         try:
-            texts.extend(page.locator(selector).all_inner_texts())
+            texts.extend(
+                page.locator(selector).all_inner_texts()
+            )
+        except Exception as error:
+            print(
+                f"Kunde inte läsa selector {selector!r}: {error}"
+            )
+
+    action_text = normalize_text(" ".join(texts))
+
+    print(
+        "Synlig knapp-/länktext: "
+        f"{action_text[:2000]}"
+    )
+
+    return action_text
+
+
+def close_cookie_dialog(page) -> None:
+    """Försöker stänga en eventuell cookie-dialog."""
+    cookie_selectors = [
+        "button:has-text('Acceptera')",
+        "button:has-text('Godkänn')",
+        "button:has-text('Accept')",
+        "button:has-text('Allow all')",
+        "button:has-text('Tillåt alla')",
+    ]
+
+    for selector in cookie_selectors:
+        try:
+            locator = page.locator(selector).first
+
+            if locator.is_visible():
+                locator.click(timeout=3_000)
+                print(f"Cookie-dialog stängdes med: {selector}")
+                return
+
         except Exception:
             pass
 
-    return normalize_text(" ".join(texts))
-
 
 def check_product(page) -> dict:
+    """Öppnar produktsidan och kontrollerar tillgängligheten."""
     print(f"Öppnar: {PRODUCT_URL}")
 
     page.goto(
@@ -128,69 +179,104 @@ def check_product(page) -> dict:
         timeout=60_000,
     )
 
-    # Ge sidan tid att ladda JavaScript och produktdata.
-    try:
-        page.wait_for_load_state("networkidle", timeout=30_000)
-    except PlaywrightTimeoutError:
-        print("networkidle nåddes inte. Fortsätter ändå.")
+    # Canyon använder JavaScript för delar av produktsidan.
+    # Vänta en kort stund utan att använda networkidle.
+    page.wait_for_timeout(5_000)
 
-    # Försök stänga cookie-dialog om den finns.
-    cookie_selectors = [
-        "button:has-text('Acceptera')",
-        "button:has-text('Godkänn')",
-        "button:has-text('Accept')",
-        "button:has-text('Allow all')",
-    ]
+    close_cookie_dialog(page)
 
-    for selector in cookie_selectors:
-        try:
-            locator = page.locator(selector).first
-            if locator.is_visible(timeout=1_000):
-                locator.click(timeout=3_000)
-                print("Cookie-dialog stängdes.")
-                break
-        except Exception:
-            pass
+    # Läs sidans synliga text.
+    body_text = normalize_text(
+        page.locator("body").inner_text()
+    )
 
-    # Läs synlig text från hela sidan.
-    body_text = normalize_text(page.locator("body").inner_text())
-
-    # Läs enbart synliga knappar/länkar separat.
+    # Läs synliga knappar och länkar.
     action_text = get_visible_action_text(page)
 
-    unavailable = contains_any(body_text, UNAVAILABLE_MARKERS)
+    matching_unavailable_markers = get_matching_markers(
+        body_text,
+        UNAVAILABLE_MARKERS,
+    )
 
-    # Köpmarkörer kontrolleras i både sidtext och synliga actions.
-    has_available_marker_in_body = contains_any(
+    matching_available_body_markers = get_matching_markers(
         body_text,
         AVAILABLE_MARKERS,
     )
 
-    has_available_action = contains_any(
+    matching_available_action_markers = get_matching_markers(
         action_text,
         AVAILABLE_MARKERS,
     )
 
-    # Kräver en köpmarkör och att sidan inte samtidigt
-    # innehåller "kommer snart"-text.
+    unavailable = bool(matching_unavailable_markers)
+
+    # Köpstatus baseras endast på tydlig köpmarkör i synliga
+    # knappar eller länkar, inte på vanlig sidtext.
+    has_available_action = bool(
+        matching_available_action_markers
+    )
+
     available = (
         not unavailable
-        and (
-            has_available_marker_in_body
-            or has_available_action
-        )
+        and has_available_action
+    )
+
+    print(
+        "Unavailable-markörer som hittades: "
+        f"{matching_unavailable_markers}"
+    )
+
+    print(
+        "Available-markörer i vanlig sidtext: "
+        f"{matching_available_body_markers}"
+    )
+
+    print(
+        "Available-markörer i synliga knappar/länkar: "
+        f"{matching_available_action_markers}"
+    )
+
+    print(f"Unavailable-text hittad: {unavailable}")
+    print(
+        "Köpmarkör hittad i synlig text: "
+        f"{bool(matching_available_body_markers)}"
+    )
+    print(
+        "Köpmarkör hittad i synliga knappar/länkar: "
+        f"{has_available_action}"
     )
 
     return {
         "available": available,
         "unavailable": unavailable,
-        "has_available_marker_in_body": has_available_marker_in_body,
-        "has_available_action": has_available_action,
+        "matching_unavailable_markers": (
+            matching_unavailable_markers
+        ),
+        "matching_available_body_markers": (
+            matching_available_body_markers
+        ),
+        "matching_available_action_markers": (
+            matching_available_action_markers
+        ),
     }
 
 
+def run_discord_test() -> None:
+    """Skickar ett testmeddelande när TEST_DISCORD=true."""
+    send_discord_message(
+        "✅ Test: Canyon watcher kan skicka Discord-notiser."
+    )
+
+    print("Testnotis skickad.")
+
+
 def main() -> None:
-    
+    # Används bara vid test.
+    # Lägg till TEST_DISCORD: "true" i workflowet tillfälligt.
+    if os.getenv("TEST_DISCORD", "").lower() == "true":
+        run_discord_test()
+        return
+
     state = load_state()
 
     with sync_playwright() as playwright:
@@ -215,32 +301,32 @@ def main() -> None:
         try:
             result = check_product(page)
 
-            old_available = bool(state.get("available", False))
-            new_available = bool(result["available"])
-            initialized = bool(state.get("initialized", False))
+            old_available = bool(
+                state.get("available", False)
+            )
+
+            new_available = bool(
+                result["available"]
+            )
+
+            initialized = bool(
+                state.get("initialized", False)
+            )
 
             print(f"Förra statusen: {old_available}")
             print(f"Nuvarande status: {new_available}")
-            print(f"Unavailable-text hittad: {result['unavailable']}")
-            print(
-                "Köpmarkör hittad i synlig text: "
-                f"{result['has_available_marker_in_body']}"
-            )
-            print(
-                "Köpmarkör hittad i synliga knappar/länkar: "
-                f"{result['has_available_action']}"
-            )
 
             should_notify = new_available and (
-                not initialized or not old_available
+                not initialized
+                or not old_available
             )
 
             if should_notify:
                 message = (
                     "🚨 Canyon-cykeln kan vara tillgänglig nu!\n\n"
                     f"{PRODUCT_URL}\n\n"
-                    "Öppna sidan direkt och kontrollera ramstorlek, "
-                    "lagerstatus och pris."
+                    "Öppna sidan direkt och kontrollera "
+                    "ramstorlek, lagerstatus och pris."
                 )
 
                 send_discord_message(message)
@@ -248,14 +334,19 @@ def main() -> None:
             else:
                 print("Ingen Discord-notis behövs.")
 
-            state = {
+            new_state = {
                 "available": new_available,
                 "initialized": True,
             }
 
-            save_state(state)
+            state_changed = (
+                state.get("available") != new_state["available"]
+                or state.get("initialized") != new_state["initialized"]
+            )
 
-            if old_available != new_available or not initialized:
+            save_state(new_state)
+
+            if state_changed:
                 print("State ändrades och sparades.")
             else:
                 print("Produktstatus oförändrad.")
