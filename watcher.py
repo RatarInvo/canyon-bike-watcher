@@ -2,7 +2,6 @@ import hashlib
 import json
 import os
 import re
-from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
@@ -21,7 +20,16 @@ STATE_FILE = Path(os.getenv("STATE_FILE", "state.json"))
 
 # Dessa texter betyder normalt att produkten inte kan köpas ännu.
 UNAVAILABLE_MARKERS = [
+    "kommer snart",
+    "coming soon",
+    "checka in igen",
+    "check back",
+    "registrera dig för att få ett meddelande",
+    "notify me",
+]
 
+# Dessa texter indikerar att köpknapp eller varukorg kan vara tillgänglig.
+AVAILABLE_MARKERS = [
     "lägg i varukorg",
     "lägg i kundvagn",
     "köp nu",
@@ -29,16 +37,6 @@ UNAVAILABLE_MARKERS = [
     "add to basket",
     "buy now",
     "välj ramstorlek",
-]
-
-# Dessa texter indikerar att köpknapp eller varukorg kan vara tillgänglig.
-AVAILABLE_MARKERS = [
-    "kommer snart",
-    "coming soon",
-    "checka in igen",
-    "check back",
-    "registrera dig för att få ett meddelande",
-    "notify me",
 ]
 
 
@@ -206,13 +204,6 @@ def check_product(page) -> dict:
 
 
 def main() -> None:
-
-    if os.getenv("TEST_DISCORD") == "true":
-        send_discord_message(
-            "✅ Test från Canyon Bike Watcher fungerar."
-        )
-        print("Testmeddelande skickat.")
-        return
     
     state = load_state()
 
@@ -254,13 +245,6 @@ def main() -> None:
                 f"{result['has_available_action']}"
             )
 
-            # Notifiera:
-            #
-            # 1. När status ändras från false till true.
-            # 2. Vid första körningen om produkten redan är tillgänglig.
-            #
-            # Det andra fallet är användbart om produkten släpps
-            # innan första workflow-körningen hunnit ske.
             should_notify = new_available and (
                 not initialized or not old_available
             )
@@ -281,15 +265,26 @@ def main() -> None:
             state = {
                 "available": new_available,
                 "initialized": True,
-                "last_text_hash": result["text_hash"],
-                "last_title": result["title"],
-                "last_checked_at": datetime.now(
-                    timezone.utc
-                ).isoformat(),
             }
 
             save_state(state)
-            print("state.json uppdaterad.")
+
+            if old_available != new_available or not initialized:
+                print("State ändrades och sparades.")
+            else:
+                print("Produktstatus oförändrad.")
+
+            state = {
+                "available": new_available,
+                "initialized": True,
+            }
+
+            save_state(state)
+
+            if old_available != new_available:
+                print("Produktstatus ändrades. state.json uppdaterad.")
+            else:
+                print("Produktstatus oförändrad. Ingen ny state-ändring.")
 
         finally:
             browser.close()
