@@ -1,9 +1,6 @@
 name: Canyon Bike Watcher
 
 on:
-  schedule:
-    - cron: "2-59/5 * * * *"
-
   workflow_dispatch:
 
 permissions:
