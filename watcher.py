@@ -1,4 +1,3 @@
-import hashlib
 import json
 import os
 import re
@@ -51,18 +50,11 @@ def normalize_text(text: str) -> str:
     text = re.sub(r"\s+", " ", text)
     return text.strip()
 
-
-def calculate_hash(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
-
-
 def load_state() -> dict:
     if not STATE_FILE.exists():
         return {
             "available": False,
             "initialized": False,
-            "last_text_hash": None,
-            "last_checked_at": None,
         }
 
     try:
@@ -73,8 +65,6 @@ def load_state() -> dict:
         return {
             "available": False,
             "initialized": False,
-            "last_text_hash": None,
-            "last_checked_at": None,
         }
 
 
@@ -191,13 +181,8 @@ def check_product(page) -> dict:
         )
     )
 
-    title = page.title()
-    text_hash = calculate_hash(body_text)
-
     return {
         "available": available,
-        "title": title,
-        "text_hash": text_hash,
         "unavailable": unavailable,
         "has_available_marker_in_body": has_available_marker_in_body,
         "has_available_action": has_available_action,
@@ -274,18 +259,6 @@ def main() -> None:
                 print("State ändrades och sparades.")
             else:
                 print("Produktstatus oförändrad.")
-
-            state = {
-                "available": new_available,
-                "initialized": True,
-            }
-
-            save_state(state)
-
-            if old_available != new_available:
-                print("Produktstatus ändrades. state.json uppdaterad.")
-            else:
-                print("Produktstatus oförändrad. Ingen ny state-ändring.")
 
         finally:
             browser.close()
