@@ -205,6 +205,14 @@ def check_product(page) -> dict:
 
 
 def main() -> None:
+
+    if os.getenv("TEST_DISCORD") == "true":
+        send_discord_message(
+            "✅ Test från Canyon Bike Watcher fungerar."
+        )
+        print("Testmeddelande skickat.")
+        return
+    
     state = load_state()
 
     with sync_playwright() as playwright:

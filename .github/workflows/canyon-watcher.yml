@@ -59,6 +59,15 @@ jobs:
         run: |
           python watcher.py
 
+      - name: Check product page
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          PRODUCT_URL: https://www.canyon.com/sv-se/landsvaegscyklar/triathlon-cykel/speedmax/cf-slx/speedmax-cf-slx-7-di2/4518.html
+          STATE_FILE: state.json
+          TEST_DISCORD: "true"
+        run: |
+          python watcher.py      
+
       - name: Save state.json
         working-directory: ${{ github.workspace }}
         run: |
