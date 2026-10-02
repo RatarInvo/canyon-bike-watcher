@@ -57,7 +57,7 @@ jobs:
         working-directory: ${{ github.workspace }}
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          PRODUCT_URL: https://www.canyon.com/sv-se/landsvaegscyklar/triathlon-cykel/speedmax/cf-slx/speedmax-cf-slx-7-di2/4518.html
+          PRODUCT_URL: https://www.canyon.com/sv-se/landsvaegscyklar/triathlon-cykel/speedmax/cf-slx/speedmax-cf-slx-8-di2/4520.html
           STATE_FILE: ${{ github.workspace }}/state.json
         run: |
           python watcher.py
@@ -65,7 +65,7 @@ jobs:
       - name: Check product page
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          PRODUCT_URL: https://www.canyon.com/sv-se/landsvaegscyklar/triathlon-cykel/speedmax/cf-slx/speedmax-cf-slx-7-di2/4518.html
+          PRODUCT_URL: https://www.canyon.com/sv-se/landsvaegscyklar/triathlon-cykel/speedmax/cf-slx/speedmax-cf-slx-8-di2/4520.html
           STATE_FILE: state.json
         run: |
           python watcher.py      
