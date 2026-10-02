@@ -37,6 +37,7 @@ AVAILABLE_MARKERS = [
     "add to basket",
     "buy now",
     "välj ramstorlek",
+    "välj färg och storlek",
 ]
 
 
