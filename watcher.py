@@ -19,7 +19,6 @@ STATE_FILE = Path(os.getenv("STATE_FILE", "state.json"))
 
 # Dessa texter betyder normalt att produkten inte kan köpas ännu.
 UNAVAILABLE_MARKERS = [
-    "kommer snart",
     "coming soon",
     "checka in igen",
     "check back",
@@ -29,6 +28,7 @@ UNAVAILABLE_MARKERS = [
 
 # Dessa texter indikerar att köpknapp eller varukorg kan vara tillgänglig.
 AVAILABLE_MARKERS = [
+    "kommer snart",
     "lägg i varukorg",
     "lägg i kundvagn",
     "köp nu",
